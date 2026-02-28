@@ -1,8 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
   provider = "prisma-client"
@@ -10,5 +5,114 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
+}
+ 
+enum TariffFlag {
+  VERDE
+  AMARELA
+  VERMELHA_P1
+  VERMELHA_P2
+  ESCASSEZ_HIDRICA
+}
+
+enum ConsumerClass {
+  RESIDENCIAL
+  COMERCIAL
+  INDUSTRIAL
+  RURAL
+  PODER_PUBLICO
+}
+ 
+enum InvoiceItemType {
+  ENERGIA_ELETRICA
+  ENERGIA_SCEE
+  ENERGIA_COMPENSADA_GD
+  CONTRIB_ILUM_PUBLICA
+  OUTROS
+}
+
+
+model User {
+  id           Int          @id @default(autoincrement())
+  name         String       @db.VarChar(255)
+  email        String       @unique @db.VarChar(255)
+  passwordHash String       @map("password_hash") @db.Text
+  cpfCnpj      String?      @unique @map("cpf_cnpj") @db.VarChar(20)
+  refreshToken String?      @map("refresh_token") @db.Text
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+ 
+  installations Installation[]
+ 
+  @@map("users")
+}
+
+model Installation {
+  id                 Int           @id @default(autoincrement())
+  userId             Int           @map("user_id")
+  installationNumber String        @unique @map("installation_number") @db.VarChar(50)
+  clientNumber       String        @map("client_number") @db.VarChar(50)
+  address            String?       @db.VarChar(500)
+  consumerClass      ConsumerClass? @map("consumer_class")
+  tariffModality     String?       @map("tariff_modality") @db.VarChar(100)
+  isGd               Boolean       @default(false) @map("is_gd")
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+ 
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invoices Invoice[]
+ 
+  @@map("installations")
+}
+
+model Invoice {
+  id                Int          @id @default(autoincrement())
+  installationId    Int          @map("installation_id")
+  referenceMonth    String       @map("reference_month") @db.VarChar(10)
+  dueDate           DateTime     @map("due_date")
+  emissionDate      DateTime?    @map("emission_date")
+  totalAmount       Decimal      @map("total_amount") @db.Decimal(10, 2)
+  publicLighting    Decimal?     @map("public_lighting") @db.Decimal(10, 2)
+  tariffFlag        TariffFlag?  @map("tariff_flag")
+  invoiceNumber     String?      @map("invoice_number") @db.VarChar(100)
+  generationBalance Decimal?     @map("generation_balance") @db.Decimal(10, 3)
+  pdfPath          String?      @map("pdf_path") @db.VarChar(500)
+  createdAt        DateTime     @default(now()) @map("created_at")
+ 
+  installation     Installation    @relation(fields: [installationId], references: [id], onDelete: Cascade)
+  items            InvoiceItem[]
+  consumptionHistory ConsumptionHistory[]
+ 
+  @@unique([installationId, referenceMonth])
+  @@map("invoices")
+}
+
+model InvoiceItem {
+  id          Int             @id @default(autoincrement())
+  invoiceId   Int             @map("invoice_id")
+  type        InvoiceItemType
+  description String          @db.VarChar(255)
+  quantity    Decimal?         @db.Decimal(10, 3)
+  unitPrice   Decimal?         @map("unit_price") @db.Decimal(14, 8)
+  amount      Decimal          @db.Decimal(10, 2)
+  icmsBase    Decimal?         @map("icms_base") @db.Decimal(10, 2)
+  icmsRate    Decimal?         @map("icms_rate") @db.Decimal(5, 4)
+ 
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+ 
+  @@map("invoice_items")
+}
+
+model ConsumptionHistory {
+  id             Int      @id @default(autoincrement())
+  invoiceId      Int      @map("invoice_id")
+  referenceMonth String  @map("reference_month") @db.VarChar(10)
+  consumptionKwh Decimal  @map("consumption_kwh") @db.Decimal(10, 3)
+  dailyAverage   Decimal? @map("daily_average") @db.Decimal(10, 3)
+  daysCount      Int?     @map("days_count")
+ 
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+ 
+  @@map("consumption_history")
 }
