@@ -1,0 +1,41 @@
+# Dependencies
+node_modules
+.pnpm-store
+
+# Build / cache
+dist
+.next
+out
+*.tsbuildinfo
+.cache
+.parcel-cache
+.eslintcache
+.stylelintcache
+
+# Git
+.git
+.gitignore
+
+# IDE / OS
+.vscode
+.idea
+*.swp
+.DS_Store
+Thumbs.db
+
+# Env (use build args or compose env instead)
+.env
+.env.*
+!.env.example
+
+# Logs e testes
+logs
+*.log
+coverage
+.nyc_output
+
+# Documentação e outros
+README.md
+DOCKER_SETUP.md
+*.md
+docker-compose*.override.yml
