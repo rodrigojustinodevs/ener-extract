@@ -5,7 +5,7 @@ import {
   type OpenAPIObject,
   SwaggerModule,
 } from '@nestjs/swagger';
-import { AppModule } from './app.module';
+import { AppModule } from './app.module.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -25,23 +25,14 @@ async function bootstrap() {
     credentials: true,
   });
 
-  /* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access -- @nestjs/swagger types not resolved by ESLint (pnpm hoisting) */
   const swaggerConfig: Omit<OpenAPIObject, 'paths'> = new DocumentBuilder()
     .setTitle('Energy Invoices API')
     .setDescription('API para processamento de faturas de energia elétrica')
     .setVersion('1.0')
     .addBearerAuth()
     .build();
-  const document = SwaggerModule.createDocument(
-    app as Parameters<typeof SwaggerModule.createDocument>[0],
-    swaggerConfig,
-  );
-  SwaggerModule.setup(
-    'api/docs',
-    app as Parameters<typeof SwaggerModule.setup>[1],
-    document,
-  );
-  /* eslint-enable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access */
+  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup('api/docs', app, document);
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
