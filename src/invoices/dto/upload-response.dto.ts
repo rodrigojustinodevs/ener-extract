@@ -47,6 +47,31 @@ export class InvoiceUploadDataDto {
   @ApiProperty({ nullable: true })
   pdfPath!: string | null;
 
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Consumo energia elétrica (kWh) = energiaEletricaKwh + energiaSceeKwh',
+  })
+  consumoEnergiaEletricaKwh!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Energia compensada (kWh)',
+  })
+  energiaCompensadaKwh!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Valor total sem GD (R$)',
+  })
+  valorTotalSemGd!: number | null;
+
+  @ApiProperty({
+    nullable: true,
+    description: 'Economia GD (R$)',
+  })
+  economiaGd!: number | null;
+
   @ApiProperty({ type: [InvoiceItemDto] })
   items!: InvoiceItemDto[];
 }

@@ -14,6 +14,8 @@ import type {
   ConsumerClass,
   InvoiceItemType,
 } from '../../generated/prisma/enums.js';
+import type { NormalizedInvoiceData } from './extractors/normalized-invoice.types';
+import { ExtractorFactory } from './extractors/extractor.factory.js';
 
 export interface InvoiceUploadResult {
   id: number;
@@ -22,6 +24,10 @@ export interface InvoiceUploadResult {
   dueDate: Date;
   totalAmount: number;
   pdfPath: string | null;
+  consumoEnergiaEletricaKwh: number | null;
+  energiaCompensadaKwh: number | null;
+  valorTotalSemGd: number | null;
+  economiaGd: number | null;
   items: Array<{
     id: number;
     type: InvoiceItemType;
@@ -38,7 +44,47 @@ export class InvoicesService {
     private readonly prisma: PrismaService,
     private readonly pdfParser: PdfParserService,
     private readonly cemigExtractor: CemigExtractorService,
+    private readonly extractorFactory: ExtractorFactory,
   ) {}
+
+  async processUpload(
+    file: Express.Multer.File,
+    userId: number,
+  ): Promise<InvoiceUploadResult> {
+    const extractor = this.extractorFactory.getExtractor();
+    const normalized = await extractor.extract(file);
+
+    this.validateNormalized(normalized);
+    const pdfPath =
+      file.path ?? (file as unknown as { path?: string }).path ?? null;
+    if (!pdfPath) {
+      throw new BadRequestException(
+        'Arquivo sem path; use storage em disco no Multer.',
+      );
+    }
+
+    // Descobre ou cria instalação a partir de installation_number e client_number
+    // extraídos do PDF (Cemig).
+    const parsed = await this.parseInvoice(pdfPath);
+    this.validateParsedInvoice(parsed);
+    const installation = await this.getOrCreateInstallation(parsed, userId);
+    const installationId = installation.id;
+
+    await this.ensureNoDuplicate(installationId, normalized.referenceMonth);
+
+    const invoice = await this.persistFromNormalized(
+      installationId,
+      normalized,
+      pdfPath,
+    );
+    return this.mapToUploadResult(invoice);
+  }
+
+  private validateNormalized(normalized: NormalizedInvoiceData): void {
+    this.assertRequired(normalized.referenceMonth, 'referenceMonth');
+    this.assertValidDate(normalized.dueDate, 'dueDate');
+    this.assertValidNumber(normalized.totalAmount, 'totalAmount');
+  }
 
   async uploadAndProcess(
     filePath: string,
@@ -151,6 +197,81 @@ export class InvoicesService {
     }
   }
 
+  private async persistFromNormalized(
+    installationId: number,
+    normalized: NormalizedInvoiceData,
+    pdfPath?: string,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const emissionDate: Date | undefined =
+        normalized.emissionDate != null &&
+        !Number.isNaN(normalized.emissionDate.getTime())
+          ? normalized.emissionDate
+          : undefined;
+      const publicLighting: number | undefined =
+        normalized.publicLighting ?? undefined;
+      const invoiceNumber: string | undefined =
+        normalized.invoiceNumber != null
+          ? String(normalized.invoiceNumber)
+          : undefined;
+      const barcode: string | undefined =
+        normalized.barcode != null
+          ? String(normalized.barcode).trim().slice(0, 300)
+          : undefined;
+      const currentGenerationBalance: number | undefined =
+        typeof normalized.currentGenerationBalance === 'number' &&
+        !Number.isNaN(normalized.currentGenerationBalance)
+          ? normalized.currentGenerationBalance
+          : undefined;
+
+      const items = normalized.items ?? [];
+      const createManyData = items
+        .filter((item) => this.shouldPersistItem(item))
+        .map((item) => this.mapItemForPersistence(item));
+
+      const invoice = await tx.invoice.create({
+        data: {
+          installationId,
+          referenceMonth: normalized.referenceMonth,
+          dueDate: normalized.dueDate,
+          emissionDate,
+          totalAmount: normalized.totalAmount,
+          publicLighting,
+          invoiceNumber,
+          barcode,
+          currentGenerationBalance,
+          pdfPath: pdfPath ?? null,
+          consumoEnergiaEletricaKwh: normalized.consumoEnergiaEletricaKwh,
+          energiaCompensadaKwh: normalized.energiaCompensadaKwh,
+          valorTotalSemGd: normalized.valorTotalSemGd,
+          economiaGd: normalized.economiaGd,
+          items:
+            createManyData.length > 0
+              ? { createMany: { data: createManyData } }
+              : undefined,
+        },
+        include: { items: true },
+      });
+
+      if (items.length > 0) {
+        const consumption = items.find(
+          (i) => i.consumptionKwh != null && i.consumptionKwh > 0,
+        )?.consumptionKwh;
+        if (consumption) {
+          await tx.consumptionHistory.create({
+            data: {
+              invoiceId: invoice.id,
+              referenceMonth: normalized.referenceMonth,
+              consumptionKwh: consumption,
+            },
+          });
+        }
+      }
+
+      return invoice;
+    });
+  }
+
   private async persist(
     installationId: number,
     parsed: ParsedInvoice,
@@ -170,7 +291,7 @@ export class InvoicesService {
         parsed.barcode != null
           ? String(parsed.barcode).trim().slice(0, 300)
           : undefined;
-      const rawBalance = parsed.currentGenerationBalance as number | null;
+      const rawBalance = parsed.currentGenerationBalance;
       const currentGenerationBalance: number | undefined =
         typeof rawBalance === 'number' && !Number.isNaN(rawBalance)
           ? rawBalance
@@ -259,6 +380,10 @@ export class InvoicesService {
     dueDate: Date;
     totalAmount: unknown;
     pdfPath: string | null;
+    consumoEnergiaEletricaKwh?: unknown;
+    energiaCompensadaKwh?: unknown;
+    valorTotalSemGd?: unknown;
+    economiaGd?: unknown;
     items: Array<{
       id: number;
       type: InvoiceItemType;
@@ -275,6 +400,20 @@ export class InvoicesService {
       dueDate: invoice.dueDate,
       totalAmount: this.safeNumber(invoice.totalAmount),
       pdfPath: invoice.pdfPath,
+      consumoEnergiaEletricaKwh:
+        invoice.consumoEnergiaEletricaKwh != null
+          ? this.safeNumber(invoice.consumoEnergiaEletricaKwh)
+          : null,
+      energiaCompensadaKwh:
+        invoice.energiaCompensadaKwh != null
+          ? this.safeNumber(invoice.energiaCompensadaKwh)
+          : null,
+      valorTotalSemGd:
+        invoice.valorTotalSemGd != null
+          ? this.safeNumber(invoice.valorTotalSemGd)
+          : null,
+      economiaGd:
+        invoice.economiaGd != null ? this.safeNumber(invoice.economiaGd) : null,
       items: invoice.items.map((item) => ({
         id: item.id,
         type: item.type,

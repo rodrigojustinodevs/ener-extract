@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   HttpCode,
   HttpStatus,
@@ -38,7 +39,10 @@ export class InvoicesController {
   @UseInterceptors(FileInterceptor('file', multerConfig))
   @HttpCode(HttpStatus.CREATED)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Upload e processamento de fatura em PDF (Cemig)' })
+  @ApiOperation({
+    summary:
+      'Upload e processamento de fatura em PDF (extrator LLM ou PDF conforme INVOICE_EXTRACTOR_MODE)',
+  })
   @ApiConsumes('multipart/form-data')
   @ApiBody({
     schema: {
@@ -48,8 +52,7 @@ export class InvoicesController {
         file: {
           type: 'string',
           format: 'binary',
-          description:
-            'PDF da fatura (Cemig). Nº do cliente e instalação são extraídos do documento.',
+          description: 'PDF da fatura.',
         },
       },
     },
@@ -65,6 +68,10 @@ export class InvoicesController {
   })
   @ApiResponse({ status: 401, description: 'Não autorizado' })
   @ApiResponse({
+    status: 403,
+    description: 'Instalação não encontrada ou sem permissão',
+  })
+  @ApiResponse({
     status: 409,
     description: 'Fatura duplicada (mesmo mês/instalação)',
   })
@@ -75,8 +82,8 @@ export class InvoicesController {
     if (!file?.path) {
       throw new BadRequestException('Arquivo PDF é obrigatório');
     }
-    const data = await this.invoicesService.uploadAndProcess(
-      file.path,
+    const data = await this.invoicesService.processUpload(
+      file,
       user.userId,
     );
     return { success: true, data };
