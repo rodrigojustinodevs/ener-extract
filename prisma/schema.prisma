@@ -75,9 +75,10 @@ model Invoice {
   totalAmount       Decimal      @map("total_amount") @db.Decimal(10, 2)
   publicLighting    Decimal?     @map("public_lighting") @db.Decimal(10, 2)
   tariffFlag        TariffFlag?  @map("tariff_flag")
-  invoiceNumber     String?      @map("invoice_number") @db.VarChar(100)
-  generationBalance Decimal?     @map("generation_balance") @db.Decimal(10, 3)
-  pdfPath          String?      @map("pdf_path") @db.VarChar(500)
+  invoiceNumber           String?   @map("invoice_number") @db.VarChar(100)
+  barcode       String?   @map("barcode") @db.VarChar(300)
+  currentGenerationBalance Decimal? @map("current_generation_balance") @db.Decimal(12, 3)
+  pdfPath                 String?  @map("pdf_path") @db.VarChar(500)
   createdAt        DateTime     @default(now()) @map("created_at")
  
   installation     Installation    @relation(fields: [installationId], references: [id], onDelete: Cascade)
